@@ -1,0 +1,33 @@
+{
+    "name": "@liqd-js/mongodb-query-optimizer",
+    "description": "Mongo Query Optimizer",
+    "version": "0.0.1",
+    "authors": [ "jakubpavlicko22", "radixxko" ],
+    "license": "MIT",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "files": [
+        "dist/**/*"
+    ],
+    "homepage": "https://liqd-js.com/lib/mongodb-query-optimizer",
+    "scripts": {
+        "test": "mocha --require ts-node/register test/helpers/*.ts",
+        "coverage": "nyc npm run test",
+        "build": "npm i && rm -rf ./dist/* && tsc",
+        "version": "npm i && rm -rf ./dist/* && tsc && npm publish"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git://github.com/liqd-js/mongodb-query-optimizer.git"
+    },
+    "keywords": [
+        "mongo",
+        "model",
+        "liqd-js",
+        "liqd"
+    ],
+    "dependencies": {
+    },
+    "devDependencies": {
+    }
+}
