@@ -73,7 +73,7 @@ export default class QueryOptimizer
          */
         const dependencies = this.calculateDependencies( pipeline );
 
-        let result: Stage[] = []
+        let result: Stage[] = dependencies;
 
         if ( dependencies.some( ({ stage }) => Object.keys(stage)[0] === '$count' ) )
         {
