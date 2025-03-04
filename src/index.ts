@@ -554,7 +554,7 @@ export default class QueryOptimizer
                 {
                     this.extractRecursively( value, extractKeys ).forEach(key => fields.add(key));
                 }
-                else if ( key === '$map' || key === '$filter' )
+                else if ( key === '$map' || key === '$filter' || key === '$reduce' )
                 {
                     fields.add((value as any).input);
                 }
