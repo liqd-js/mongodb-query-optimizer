@@ -672,4 +672,17 @@ describe( 'optimizePipeline - count', () => {
         const expected = order.map( i => pipeline[i] );
         assert.deepStrictEqual( optimized, expected );
     })
+
+    it( 'should remove $sort before $count', () => {
+        const pipeline = [
+            { $sort: { createdAt: -1 } },
+            { $count: 'total' }
+        ];
+
+        const optimized = queryOptimizer.optimizePipeline( pipeline );
+
+        const order = [1]
+        const expected = order.map( i => pipeline[i] );
+        assert.deepStrictEqual( optimized, expected );
+    })
 } )
