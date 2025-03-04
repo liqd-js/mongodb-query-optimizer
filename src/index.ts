@@ -583,6 +583,10 @@ export default class QueryOptimizer
                         this.extractRecursively( (value as any).else, extractKeys ).forEach(key => fields.add(key));
                     }
                 }
+                else if ( key === '$addToSet' )
+                {
+                    this.extractRecursively( value, extractKeys ).forEach(key => fields.add(key));
+                }
                 else if ( key === '$arrayElemAt' )
                 {
                     fields.add((value as any[])[0]);

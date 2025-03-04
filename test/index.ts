@@ -170,6 +170,17 @@ describe( 'extractFields', () =>
         assert.strictEqual( destructive, false );
     } );
 
+    it( 'should extract fields from $group with $addToSet', () =>
+    {
+        const stage = { "$group": { "_id": "$department", "ids": { "$addToSet": "$_id" } } };
+        const { used, produced, destructive, removed } = queryOptimizer.extractFields( stage );
+
+        assert.deepStrictEqual( used, ['department', '_id'] );
+        assert.deepStrictEqual( produced, ['_id', 'ids'] );
+        assert.deepStrictEqual( removed, [] );
+        assert.strictEqual( destructive, false );
+    } );
+
     /*
     { "$lookup": { "from": "users", "localField": "userId", "foreignField": "_id", "as": "user" } }
     { "$lookup": { "from": "orders", "let": { "id": "$_id" }, "pipeline": [{ "$match": { "$expr": { "$eq": ["$userId", "$$id"] } } }], "as": "orders" } }
