@@ -1,5 +1,5 @@
-import { QueryOptimizer } from "../src";
 import * as assert from "node:assert";
+import QueryOptimizer from "../src";
 
 const queryOptimizer = new QueryOptimizer();
 
@@ -612,6 +612,63 @@ describe( 'optimizePipeline', () => {
         const optimized = queryOptimizer.optimizePipeline( pipeline );
 
         const order = [2, 0, 1, 3, 4]
+        const expected = order.map( i => pipeline[i] );
+        assert.deepStrictEqual( optimized, expected );
+    })
+} )
+
+describe( 'optimizePipeline - count', () => {
+    it( 'should optimize pipeline with unnecessary $lookup', () => {
+        const pipeline = [
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'userId',
+                    foreignField: '_id',
+                    as: 'user'
+                }
+            },
+            { $match: { status: 'active' } },
+            { $count: 'total' }
+        ];
+
+        const optimized = queryOptimizer.optimizePipeline( pipeline );
+        const order = [1, 2]
+        const expected = order.map( i => pipeline[i] );
+        assert.deepStrictEqual( optimized, expected );
+    } );
+
+    it( 'should optimize pipeline with unnecessary $addFields', () => {
+        const pipeline = [
+            {
+                $addFields: {
+                    total: 1
+                }
+            },
+            { $count: 'total' }
+        ];
+
+        const optimized = queryOptimizer.optimizePipeline( pipeline );
+
+        const order = [1]
+        const expected = order.map( i => pipeline[i] );
+        assert.deepStrictEqual( optimized, expected );
+    })
+
+    it( 'should optimize pipeline with unnecessary $project', () =>
+    {
+        const pipeline = [
+            {
+                $project: {
+                    total: 1
+                }
+            },
+            { $count: 'total' }
+        ];
+
+        const optimized = queryOptimizer.optimizePipeline( pipeline );
+
+        const order = [ 1 ]
         const expected = order.map( i => pipeline[i] );
         assert.deepStrictEqual( optimized, expected );
     })

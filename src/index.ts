@@ -1,13 +1,13 @@
 type ExtractedFields = { used: string[], produced: string[], removed: string[], destructive: boolean }
 type FieldDependency = ExtractedFields & { stage: any, stageID: number }
-type Stage = { stageID: number, stage: any, destructive: boolean, dependencies: any[], dependents: any[] }
-type Stage2 = { stageID: number, stage: any, destructive: boolean, dependents: any[] }
+type Stage = { stageID: number, stage: any, destructive: boolean, dependencies: Stage[], dependents: Stage[] }
+type StageType = typeof STAGE_ORDER[number];
 
 const STAGE_DEPS: {[stage: string]: string[]}  = {
     '$limit': ['$sort', '$skip', '$sample', '$match'],
     '$sort': ['$limit', '$skip', '$sample'],
     '$skip': ['$sort', '$limit', '$sample', '$match'],
-    '$sample': ['$sort', '$limit', 'skip', '$match'],
+    '$sample': ['$sort', '$limit', '$skip', '$match'],
     '$match': ['$limit', '$skip', '$sample', '$group', '$bucket', '$bucketAuto', '$facet'],
 }
 // const ADDITIVE_STAGES = [
@@ -38,6 +38,19 @@ const STAGE_ORDER = [
     '$unset',
     '$sample',
 ]
+const STAGES_ALTERING_COUNT = [
+    '$match',
+    '$unwind',
+    '$search',
+    '$limit',
+    '$skip',
+    '$group',
+    '$bucket',
+    '$bucketAuto',
+    '$facet',
+    '$count',
+    '$sample',
+]
 const DATE_OPERATORS = [ '$dayOfYear', '$dayOfMonth', '$dayOfWeek', '$year', '$month', '$week', '$hour', '$minute', '$second', '$millisecond', '$dateToString' ];
 const MATHEMATICAL_OPERATORS = [ '$sum', '$subtract', '$multiply', '$divide', '$mod', '$abs', '$ceil', '$floor', '$ln', '$log', '$log10', '$pow', '$sqrt', '$trunc', '$exp', '$round', '$sin', '$cos', '$tan', '$asin', '$acos', '$atan', '$atan2', '$degreesToRadians', '$radiansToDegrees', '$avg', '$min', '$max', '$gt', '$gte', '$lt', '$lte', '$eq', '$ne' ];
 
@@ -60,9 +73,53 @@ export default class QueryOptimizer
          */
         const dependencies = this.calculateDependencies( pipeline );
 
-        const sorted = this.topSort( dependencies );
+        let result: Stage[] = []
 
-        return sorted.map( ({ stage }) => stage );
+        if ( dependencies.some( ({ stage }) => Object.keys(stage)[0] === '$count' ) )
+        {
+            result = this.optimizeCountPipeline( dependencies )
+        }
+
+        result = this.topSort( result );
+
+        return result.map( ({ stage }) => stage );
+    }
+
+    /**
+     * Removes stages that don't affect the count - $lookup, $graphLookup, $project, $addFields, $set, $unset that don't have dependents
+     * @param pipeline
+     * @private
+     */
+    private optimizeCountPipeline( pipeline: Stage[] ): Stage[]
+    {
+        const result = pipeline.slice();
+
+        const queue = result.filter( stage => this.filterCountPipelineQueue( stage ) );
+
+        while ( queue.length > 0 )
+        {
+            const stage = queue.shift()!;
+
+            const index = result.findIndex( s => s.stageID === stage.stageID );
+            if ( index === -1 )
+            {
+                continue;
+            }
+
+            result.splice( index, 1 );
+
+            for ( const dependency of stage.dependencies )
+            {
+                dependency.dependents = dependency.dependents.filter( d => d.stageID !== stage.stageID );
+
+                if ( this.filterCountPipelineQueue( dependency ) && !queue.find( q => q.stageID === dependency.stageID ) )
+                {
+                    queue.push( dependency );
+                }
+            }
+        }
+
+        return result;
     }
 
     calculateDependencies( pipeline: any[] ): Stage[]
@@ -79,7 +136,8 @@ export default class QueryOptimizer
             // TODO: $project, $group - destructive operators - vyhodia ostatné fieldy, všetko, čo používa aj niečo iné okrem toho, čo produkujú, musí byť pred nimi
         }
 
-        const dependencies: Stage[] = []
+        const dependencies: (Omit<Stage, 'dependencies' | 'dependents'> & {dependencies: number[], dependents: number[]})[] = []
+        const result: Stage[] = [];
 
         for ( let i = 0; i < fieldDependencies.length; ++i )
         {
@@ -106,30 +164,41 @@ export default class QueryOptimizer
                 deps = deps.filter( dep => this.filterDependent( dep, fieldDependencies[i] ) );
             }
 
-            dependencies.push({ stageID, stage, destructive, dependencies: deps, dependents: [] });
+            dependencies.push({ stageID, stage, destructive, dependencies: deps.map( el => el.stageID ), dependents: [] });
+            result.push({ stageID, stage, destructive, dependencies: [], dependents: [] });
         }
 
         for ( let i = 0; i < fieldDependencies.length; ++i )
         {
             const deps = dependencies[i].dependencies;
 
-            for ( const dep of deps )
+            for ( const depStageID of deps )
             {
-                const dependency = dependencies.find( d => d.stageID === dep.stageID );
+                const dependency = dependencies.find( d => d.stageID === depStageID );
 
                 if ( dependency )
                 {
-                    dependency.dependents.push( dependencies[i] );
+                    dependency.dependents.push( dependencies[i].stageID );
                 }
             }
         }
 
-        return dependencies;
+        // resolve dependency and dependents stageIDs
+        for ( const dep of dependencies )
+        {
+            const { stageID, stage, destructive, dependencies: deps, dependents } = dep;
+
+            const resultStage = result.find( r => r.stageID === stageID )!;
+            resultStage.dependencies = deps.map( depID => result.find( d => d.stageID === depID )! );
+            resultStage.dependents = dependents.map( depID => result.find( d => d.stageID === depID )! );
+        }
+
+        return result;
     }
 
-    private topSort( graph: Stage2[] )
+    private topSort( graph: Stage[] )
     {
-        let queue: Stage2[] = [];
+        let queue: Stage[] = [];
         const outDegrees: {[stage: string]: number} = {};
 
         for ( const { stageID } of graph )
@@ -145,26 +214,26 @@ export default class QueryOptimizer
             }
         }
 
-        const initialWave: Stage2[] = [];
-        for ( const { stageID, stage, destructive, dependents } of graph )
+        const initialWave: Stage[] = [];
+        for ( const { stageID, stage, destructive, dependencies, dependents } of graph )
         {
             if ( outDegrees[stageID] === 0 )
             {
-                initialWave.push({ stageID, stage, destructive, dependents });
+                initialWave.push({ stageID, stage, destructive, dependencies, dependents });
             }
         }
         initialWave.sort( this.stageSort );
         queue.push(...initialWave);
 
-        const result: Stage2[] = [];
+        const result: Stage[] = [];
 
         while ( queue.length > 0 )
         {
-            const { stageID, stage, destructive, dependents } = queue.shift() as Stage;
-            result.push({ stageID, stage, destructive, dependents });
+            const { stageID, stage, destructive, dependencies, dependents } = queue.shift() as Stage;
+            result.push({ stageID, stage, destructive, dependencies, dependents });
 
-            const wave: Stage2[] = [];
-            const subQueue: Stage2[] = [];
+            const wave: Stage[] = [];
+            const subQueue: Stage[] = [];
 
             for ( const dep of dependents )
             {
@@ -191,7 +260,7 @@ export default class QueryOptimizer
         return result;
     }
 
-    private stageSort( a: Stage2, b: Stage2 )
+    private stageSort( a: Stage, b: Stage )
     {
         if ( a.destructive && !b.destructive ) { return -1; }
         if ( !a.destructive && b.destructive ) { return 1; }
@@ -227,6 +296,12 @@ export default class QueryOptimizer
 
         // TODO: prefix match
         return dep.produced.some( field => reference.used.some( used => field === used || field.split('.')[0] === used.split('.')[0] ) );
+    }
+
+    private filterCountPipelineQueue( stage: Stage ): boolean
+    {
+        return ( stage.dependents.length === 0 || ( stage.dependents.length === 1 && this.stageType( stage.dependents[0] ) === '$count' ) )
+            && !STAGES_ALTERING_COUNT.includes( this.stageType( stage ) )
     }
 
     extractFields( stage: any ): ExtractedFields
@@ -419,6 +494,7 @@ export default class QueryOptimizer
                 throw new Error(`Unsupported stage: "${operator}"`);
         }
 
+
         return { used: Array.from(usedFields), produced: Array.from(producedFields), removed: Array.from( removedFields ), destructive }
     }
 
@@ -481,7 +557,18 @@ export default class QueryOptimizer
                 }
                 else if ( key === '$cond' )
                 {
-                    this.extractRecursively( (value as any).if, extractKeys ).forEach(key => fields.add(key));
+                    if ( Array.isArray(value) )
+                    {
+                        this.extractRecursively( value[0], extractKeys ).forEach(key => fields.add(key));
+                        this.extractRecursively( value[1], extractKeys ).forEach(key => fields.add(key));
+                        this.extractRecursively( value[2], extractKeys ).forEach(key => fields.add(key));
+                    }
+                    else
+                    {
+                        this.extractRecursively( (value as any).if, extractKeys ).forEach(key => fields.add(key));
+                        this.extractRecursively( (value as any).then, extractKeys ).forEach(key => fields.add(key));
+                        this.extractRecursively( (value as any).else, extractKeys ).forEach(key => fields.add(key));
+                    }
                 }
                 else if ( key === '$arrayElemAt' )
                 {
@@ -571,5 +658,10 @@ export default class QueryOptimizer
         }
 
         return new Set([...result].filter( field => !field.startsWith('$') ));
+    }
+
+    private stageType( stage: Stage ): StageType
+    {
+        return Object.keys(stage.stage)[0] as StageType;
     }
 }
