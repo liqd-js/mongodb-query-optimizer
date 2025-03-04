@@ -181,6 +181,17 @@ describe( 'extractFields', () =>
         assert.strictEqual( destructive, false );
     } );
 
+    it( 'should extract fields from $group with $first and $last', () =>
+    {
+        const stage = { "$group": { "_id": "$department", "firstID": { "$first": "$_id" }, "lastID": { "$last": "$_id" } } };
+        const { used, produced, destructive, removed } = queryOptimizer.extractFields( stage );
+
+        assert.deepStrictEqual( used, ['department', '_id'] );
+        assert.deepStrictEqual( produced, ['_id', 'firstID', 'lastID'] );
+        assert.deepStrictEqual( removed, [] );
+        assert.strictEqual( destructive, false );
+    } );
+
     /*
     { "$lookup": { "from": "users", "localField": "userId", "foreignField": "_id", "as": "user" } }
     { "$lookup": { "from": "orders", "let": { "id": "$_id" }, "pipeline": [{ "$match": { "$expr": { "$eq": ["$userId", "$$id"] } } }], "as": "orders" } }

@@ -71,31 +71,39 @@ export default class QueryOptimizer
             - match, project, group should be as early as possible
             - lookup should be as late as possible
          */
-        const dependencies = this.calculateDependencies( pipeline );
-
-        let result: Stage[] = dependencies;
-
-        if ( dependencies.some( ({ stage }) => Object.keys(stage)[0] === '$count' ) )
+        try
         {
-            result = this.optimizeCountPipeline( dependencies )
+            const dependencies = this.calculateDependencies( pipeline );
+
+            let result: Stage[] = dependencies;
+
+            if ( dependencies.some( ({ stage }) => Object.keys(stage)[0] === '$count' ) )
+            {
+                result = this.optimizeCountPipeline( dependencies )
+            }
+
+            result = this.topSort( result );
+
+            const resultPipeline = result.map( ({ stage }) => stage );
+
+            if ( resultPipeline.length !== pipeline.length || JSON.stringify(pipeline) !== JSON.stringify(resultPipeline) )
+            {
+                console.log('======================================================================')
+                console.log('Original pipeline:');
+                console.dir( pipeline, { depth: 10 });
+                console.log('----------------------------------------------------------------------')
+                console.log('Optimized pipeline:');
+                console.dir( resultPipeline, { depth: 10 });
+                console.log('======================================================================')
+            }
+
+            return resultPipeline;
         }
-
-        result = this.topSort( result );
-
-        const resultPipeline = result.map( ({ stage }) => stage );
-
-        if ( resultPipeline.length !== pipeline.length || JSON.stringify(pipeline) !== JSON.stringify(resultPipeline) )
+        catch ( e )
         {
-            console.log('======================================================================')
-            console.log('Original pipeline:');
-            console.dir( pipeline, { depth: 10 });
-            console.log('----------------------------------------------------------------------')
-            console.log('Optimized pipeline:');
-            console.dir( resultPipeline, { depth: 10 });
-            console.log('======================================================================')
+            console.error('Error optimizing pipeline:', e);
+            return pipeline;
         }
-
-        return resultPipeline;
     }
 
     /**
@@ -621,7 +629,7 @@ export default class QueryOptimizer
                         this.extractRecursively( date, extractKeys ).forEach(key => fields.add(key));
                     }
                 }
-                else if ( ['$size', '$push'].includes(key) )
+                else if ( ['$size', '$push', '$first', '$last'].includes(key) )
                 {
                     if ( typeof value === 'string' )
                     {
