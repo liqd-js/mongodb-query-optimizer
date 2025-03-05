@@ -86,16 +86,16 @@ export default class QueryOptimizer
 
             const resultPipeline = result.map( ({ stage }) => stage );
 
-            if ( resultPipeline.length !== pipeline.length || JSON.stringify(pipeline) !== JSON.stringify(resultPipeline) )
-            {
-                console.log('======================================================================')
-                console.log('Original pipeline:');
-                console.dir( pipeline, { depth: 10 });
-                console.log('----------------------------------------------------------------------')
-                console.log('Optimized pipeline:');
-                console.dir( resultPipeline, { depth: 10 });
-                console.log('======================================================================')
-            }
+            // if ( resultPipeline.length !== pipeline.length || JSON.stringify(pipeline) !== JSON.stringify(resultPipeline) )
+            // {
+            //     console.log('======================================================================')
+            //     console.log('Original pipeline:');
+            //     console.dir( pipeline, { depth: 10 });
+            //     console.log('----------------------------------------------------------------------')
+            //     console.log('Optimized pipeline:');
+            //     console.dir( resultPipeline, { depth: 10 });
+            //     console.log('======================================================================')
+            // }
 
             return resultPipeline;
         }
